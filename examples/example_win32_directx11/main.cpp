@@ -1,11 +1,17 @@
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
+#include "calculations.h"
+
 #include <d3d11.h>
 #include <tchar.h>
 #include <iostream>
 #include <Windows.h>
 #include <conio.h>
+#include <cmath>
+#include <vector>
+#include <list>
+#include <cstdint>
 
 // Data
 static ID3D11Device*            g_pd3dDevice = nullptr;
@@ -22,16 +28,20 @@ void CreateRenderTarget();
 void CleanupRenderTarget();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+struct Point
+{
+    int a;
+    int b;
+};
+
 // Main code
 int main(int, char**)
 {
-    //ImGui_ImplWin32_EnableDpiAwareness();
-
     // Create application window
     ImGui_ImplWin32_EnableDpiAwareness();
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ImGui Example", nullptr };
     ::RegisterClassExW(&wc);
-    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui DirectX11 Example", WS_OVERLAPPEDWINDOW, 100, 100, 1280, 800, nullptr, nullptr, wc.hInstance, nullptr);
+    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"DBD Skill Checker", WS_OVERLAPPEDWINDOW, 100, 100, 1280, 800, nullptr, nullptr, wc.hInstance, nullptr);
 
     // Initialize Direct3D
     if (!CreateDeviceD3D(hwnd))
@@ -78,30 +88,20 @@ int main(int, char**)
     // Main loop
     float screen_w = GetSystemMetrics(SM_CXSCREEN);
     float screen_h = GetSystemMetrics(SM_CYSCREEN);
+    float center_x = screen_w * 0.5f;
+    float center_y = screen_h * 0.5f - 20;
 
     bool sc_is_active = false;
     bool pause_skill_checker = false;
     bool opened = true;
     bool done = false;
 
-    std::pair<float, float> px_pos[16] = {
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-        std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222),
-    };
+    int int_slider = 10;
+    
+    // Coords of pixel to be checked to determine if Skill Checker should be ran
+    std::pair<float, float> px_to_check = std::make_pair((screen_w * 0.5) + 1, (screen_h * 0.5) * 0.972222222);
+
+    std::list<std::pair<float, float>> drawn_px = {std::make_pair(center_x + 0.00f, center_y - 85.00f),};
 
     ImGui::SetNextWindowPos(ImVec2(5, 5));
     while (!done)
@@ -142,12 +142,14 @@ int main(int, char**)
         ImGui::NewFrame();
 
         // ImGui Window
-        ImGui::SetNextWindowSize(ImVec2(screen_w / 8, screen_h / 8));
+        ImGui::SetNextWindowSize(ImVec2(screen_w / 8, screen_h / 4));
         if (ImGui::Begin("DBD Skill Checker", & opened, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
             ImGui::Checkbox("Activate Skill Checker", &sc_is_active);
-            ImGui::Checkbox("Enable pause hotkey", &pause_skill_checker);
-            if (ImGui::Button("Set pause hotkey")) {
-                //code
+            if (ImGui::CollapsingHeader("Configuration")) {
+                ImGui::Checkbox("Enable pause hotkey", &pause_skill_checker);
+                if (ImGui::Button("Set pause hotkey")) {
+                    //code
+                }
             }
         } ImGui::End();
 
@@ -163,22 +165,24 @@ int main(int, char**)
         //HRESULT hr = g_pSwapChain->Present(0, 0); // Present without vsync
         g_SwapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
 
-        // Executes while Skill Checker is active
+        // Checks if Skill Checker is active and runs code if set to true
         if (sc_is_active) {
             HDC dng = GetDC(NULL);
 
             // Checks if pause hotkey isn't pressed to determine if operation should be paused
             if (!pause_skill_checker) {
-                for (int i = 0; i < 16; i++) {
-                    COLORREF c = GetPixel(dng, std::get<0>(px_pos[i]), std::get<1>(px_pos[i]));
-                    SetPixel(dng, std::get<0>(px_pos[i]), std::get<1>(px_pos[i]), RGB(154, 255, 0));
-                    std::cout << "(" << (int)GetRValue(c) << ", ";
-                    std::cout << (int)GetGValue(c) << ", ";
-                    std::cout << (int)GetBValue(c) << ")" << std::endl;
+                for (int i = 0; i < 64; i++) {
+                    static HDC dng = GetDC(NULL);
+                    static std::vector<Point> circle_points = GetNPointsInCircle(Point{(int)std::get<0>(px_to_check), (int)std::get<1>(px_to_check)}, 85, 64);
+                    for (Point p : circle_points)
+                    {
+                        SetPixel(dng, p.a, p.b, RGB(255, 0, 255));
+                    }
+
+                    SetPixel(dng, 1280, 700, RGB(255, 255, 255));
                 }
             }
         }
-
     }
 
     // Cleanup
